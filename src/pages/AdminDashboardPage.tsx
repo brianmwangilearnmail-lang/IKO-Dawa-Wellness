@@ -1,0 +1,1285 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { LayoutDashboard, Plus, Trash2, Edit2, LogOut, Package, Image as ImageIcon, Layout, Save, X, Check, Upload, CloudUpload, BarChart3, MessageSquare, Download, Mail, ShoppingBag, Clock, CheckCircle2, Truck, Settings, Loader2, Info } from 'lucide-react';
+import { getEmailSettings, connectGmail, clearEmailSettings, sendDispatchReceipt, EmailSettings } from '../lib/emailService';
+import { motion, AnimatePresence } from 'motion/react';
+import { useSite } from '../context/SiteContext';
+import { Product, Order, HeroBanner } from '../types';
+import { AnalyticsDashboard } from '../components/AnalyticsDashboard';
+import { supabase } from '../lib/supabase';
+
+interface AdminDashboardPageProps {
+  onLogout: () => void;
+}
+
+export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout }) => {
+  const { products, hero, orders, updateHero, updateProduct, addProduct, deleteProduct, updateOrderStatus } = useSite();
+  const [activeTab, setActiveTab] = useState<'hero' | 'products' | 'analytics' | 'inquiries' | 'orders' | 'settings'>('analytics');
+  
+  // Email Settings state
+  const [emailSettings, setEmailSettings] = useState<EmailSettings | null>(getEmailSettings());
+  const [clientIdInput, setClientIdInput] = useState(emailSettings?.clientId || '');
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  
+  // Banner state
+  const [banners, setBanners] = useState<HeroBanner[]>(hero);
+  const bannerFileInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  
+  // Custom Notification state
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  
+  // Custom Confirm Modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    cancelText?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => setNotification(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
+
+  useEffect(() => {
+    if (hero) setBanners(hero);
+  }, [hero]);
+
+  const handleHeroSave = () => {
+    updateHero(banners);
+    setNotification({ message: 'Banners updated successfully!', type: 'success' });
+  };
+
+  const handleAddBanner = () => {
+    if (banners.length >= 5) {
+      setNotification({ message: 'Maximum 5 banners allowed.', type: 'error' });
+      return;
+    }
+    const newBanner: any = {
+      titleTop: 'BRAND NEW',
+      titleBottom: 'WELLNESS',
+      subtitle: 'Premium health solutions delivered to your doorstep.',
+      image: '',
+      order_index: banners.length
+    };
+    setBanners([...banners, newBanner]);
+  };
+
+  const handleRemoveBanner = (index: number) => {
+    setConfirmModal({
+      title: 'Remove Banner',
+      message: 'Are you sure you want to remove this banner? This action cannot be undone until you save.',
+      confirmText: 'REMOVE',
+      onConfirm: () => {
+        setBanners(banners.filter((_, i) => i !== index));
+        setConfirmModal(null);
+      }
+    });
+  };
+
+  const handleUpdateBanner = (index: number, updates: Partial<HeroBanner>) => {
+    const newBanners = [...banners];
+    newBanners[index] = { ...newBanners[index], ...updates };
+    setBanners(newBanners);
+  };
+
+  // Product Modal state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
+  const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
+  const productFileInputRef = useRef<HTMLInputElement>(null);
+
+  const [inquiries, setInquiries] = useState<any[]>([]);
+  const [loadingInquiries, setLoadingInquiries] = useState(false);
+  const [selectedInquiry, setSelectedInquiry] = useState<any | null>(null);
+
+  // Order state
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+
+  useEffect(() => {
+    if (activeTab === 'inquiries') {
+      fetchInquiries();
+    }
+  }, [activeTab]);
+
+  const fetchInquiries = async () => {
+    setLoadingInquiries(true);
+    const { data, error } = await supabase.from('contact_messages').select('*').order('created_at', { ascending: false });
+    if (!error && data) setInquiries(data);
+    setLoadingInquiries(false);
+  };
+
+  const downloadCSV = () => {
+    if (inquiries.length === 0) return;
+    const headers = ['ID', 'Date', 'First Name', 'Last Name', 'Email', 'Subject', 'Message'];
+    const csvContent = [
+      headers.join(','),
+      ...inquiries.map(iq => {
+        const esc = (str: string) => `"${(str || '').replace(/"/g, '""')}"`;
+        return [iq.id, esc(new Date(iq.created_at).toLocaleDateString()), esc(iq.first_name), esc(iq.last_name), esc(iq.email), esc(iq.subject), esc(iq.message)].join(',');
+      })
+    ].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', 'Website_Inquiries.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+
+
+  const handleToggleProductStatus = (id: number, currentStatus: boolean) => {
+    updateProduct(id, { inStock: !currentStatus });
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, callback: (base64: string) => void) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setNotification({ message: 'Please select a valid image file.', type: 'error' });
+      return;
+    }
+
+    // Auto-compress image using canvas before storing
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      const MAX_SIZE = 1200;
+      let { width, height } = img;
+
+      // Scale down if too large
+      if (width > MAX_SIZE || height > MAX_SIZE) {
+        if (width > height) {
+          height = Math.round((height * MAX_SIZE) / width);
+          width = MAX_SIZE;
+        } else {
+          width = Math.round((width * MAX_SIZE) / height);
+          height = MAX_SIZE;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Preserve PNG transparency; use JPEG only for photos
+      const isPng = file.type === 'image/png';
+      const compressed = isPng
+        ? canvas.toDataURL('image/png')
+        : canvas.toDataURL('image/jpeg', 0.85);
+      URL.revokeObjectURL(objectUrl);
+      callback(compressed);
+    };
+
+    img.src = objectUrl;
+  };
+
+  const openAddModal = () => {
+    setModalMode('add');
+    setEditingProduct({
+      title: '',
+      composition: '',
+      description: '',
+      brand: 'Natural Factors',
+      price: 0,
+      image: '',
+      inStock: true
+    });
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (product: Product) => {
+    setModalMode('edit');
+    setEditingProduct(product);
+    setIsModalOpen(true);
+  };
+
+  const handleSaveProduct = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+
+    if (modalMode === 'add') {
+      addProduct(editingProduct as Omit<Product, 'id'>);
+    } else {
+      updateProduct(editingProduct.id!, editingProduct);
+    }
+    
+    setIsModalOpen(false);
+    setEditingProduct(null);
+  };
+
+  const handleConnectEmail = async () => {
+    if (!clientIdInput.trim()) {
+      setNotification({ message: 'Please enter a Google Client ID first.', type: 'info' });
+      return;
+    }
+    setIsConnecting(true);
+    try {
+      const settings = await connectGmail(clientIdInput.trim());
+      setEmailSettings(settings);
+      setNotification({ message: `Successfully connected to ${settings.connectedEmail}`, type: 'success' });
+    } catch (error: any) {
+      console.error('Connection failed:', error);
+      setNotification({ message: `Failed to connect Gmail: ${error.message}`, type: 'error' });
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleDisconnectEmail = () => {
+    setConfirmModal({
+      title: 'Disconnect Gmail',
+      message: 'Are you sure you want to disconnect your Gmail account? Automated receipts will stop sending to customers.',
+      confirmText: 'DISCONNECT',
+      onConfirm: () => {
+        clearEmailSettings();
+        setEmailSettings(null);
+        setConfirmModal(null);
+        setNotification({ message: 'Gmail disconnected successfully', type: 'info' });
+      }
+    });
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+        case 'pending': return 'bg-amber-100 text-amber-700 border-amber-200';
+        case 'dispatched': return 'bg-blue-100 text-blue-700 border-blue-200';
+        case 'completed': return 'bg-green-100 text-green-700 border-green-200';
+        default: return 'bg-slate-100 text-slate-700 border-[var(--border)]';
+    }
+  };
+
+  return (
+    <div className="flex bg-[var(--bg)] min-h-screen text-[var(--text-main)] w-full">
+      {/* Notification Toast */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -50, x: '-50%' }}
+            className="fixed top-8 left-1/2 z-[200] min-w-[320px]"
+          >
+            <div className={`p-4 rounded-xl shadow-lg border backdrop-blur-xl flex items-center justify-between gap-4 ${
+              notification.type === 'success' ? 'bg-emerald-50 border-emerald-200' : 
+              notification.type === 'error' ? 'bg-red-50 border-red-200' : 
+              'bg-blue-50 border-blue-200'
+            }`}>
+              <div className="flex items-center gap-3">
+                {notification.type === 'success' ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                ) : notification.type === 'error' ? (
+                  <X className="w-5 h-5 text-red-600" />
+                ) : (
+                  <Info className="w-5 h-5 text-blue-600" />
+                )}
+                <p className={`text-sm font-semibold ${
+                  notification.type === 'success' ? 'text-emerald-800' :
+                  notification.type === 'error' ? 'text-red-800' :
+                  'text-blue-800'
+                }`}>{notification.message}</p>
+              </div>
+              <button onClick={() => setNotification(null)} className={`bg-white/50 p-1.5 rounded-lg hover:bg-white/80 transition-colors ${
+                notification.type === 'success' ? 'text-emerald-600' :
+                notification.type === 'error' ? 'text-red-600' :
+                'text-blue-600'
+              }`}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex w-full">
+        {/* Sidebar Nav */}
+        <div className="w-[260px] bg-slate-950 text-white p-8 flex flex-col min-h-screen flex-shrink-0 relative z-10 transition-all duration-300">
+          <div className="text-2xl mb-12 flex items-center gap-3 cursor-default">
+             <div className="px-2 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
+                <span className="text-white font-black text-sm tracking-tighter">IKO</span>
+             </div>
+             <div className="flex flex-col">
+               <span className="font-serif italic text-emerald-500 text-2xl leading-none">DAWA</span>
+               <span className="text-[9px] font-black uppercase tracking-[0.3em] text-white/40 mt-1">Admin Panel</span>
+             </div>
+          </div>
+          
+          <nav className="flex flex-col gap-2">
+            <button 
+              onClick={() => setActiveTab('analytics')}
+              className={`w-full p-4 rounded-xl transition-all flex items-center gap-4 text-xs uppercase tracking-widest font-black ${activeTab === 'analytics' ? 'bg-white/10 text-white border border-white/10' : 'text-white/40 hover:text-white hover:bg-white/5 border border-transparent'}`}
+            >
+              <BarChart3 className="w-4 h-4 text-emerald-500" /> Analytics
+            </button>
+            <button 
+              onClick={() => setActiveTab('orders')}
+              className={`w-full p-4 rounded-xl transition-all flex items-center gap-4 text-xs uppercase tracking-widest font-black ${activeTab === 'orders' ? 'bg-white/10 text-white border border-white/10' : 'text-white/40 hover:text-white hover:bg-white/5 border border-transparent'}`}
+            >
+              <ShoppingBag className="w-4 h-4 text-emerald-500" /> Orders
+            </button>
+            <button 
+              onClick={() => setActiveTab('products')}
+              className={`w-full p-4 rounded-xl transition-all flex items-center gap-4 text-xs uppercase tracking-widest font-black ${activeTab === 'products' ? 'bg-white/10 text-white border border-white/10' : 'text-white/40 hover:text-white hover:bg-white/5 border border-transparent'}`}
+            >
+              <Package className="w-4 h-4 text-emerald-500" /> Catalog
+            </button>
+            <button 
+              onClick={() => setActiveTab('hero')}
+              className={`w-full p-4 rounded-xl transition-all flex items-center gap-4 text-xs uppercase tracking-widest font-black ${activeTab === 'hero' ? 'bg-white/10 text-white border border-white/10' : 'text-white/40 hover:text-white hover:bg-white/5 border border-transparent'}`}
+            >
+              <Layout className="w-4 h-4 text-emerald-500" /> Banners
+            </button>
+            <button 
+              onClick={() => setActiveTab('inquiries')}
+              className={`w-full p-4 rounded-xl transition-all flex items-center gap-4 text-xs uppercase tracking-widest font-black ${activeTab === 'inquiries' ? 'bg-white/10 text-white border border-white/10' : 'text-white/40 hover:text-white hover:bg-white/5 border border-transparent'}`}
+            >
+              <MessageSquare className="w-4 h-4 text-emerald-500" /> Inquiries
+            </button>
+            <button 
+              onClick={() => setActiveTab('settings')}
+              className={`w-full p-4 rounded-xl transition-all flex items-center gap-4 text-xs uppercase tracking-widest font-black ${activeTab === 'settings' ? 'bg-white/10 text-white border border-white/10' : 'text-white/40 hover:text-white hover:bg-white/5 border border-transparent'}`}
+            >
+              <Settings className="w-4 h-4 text-emerald-500" /> Settings
+            </button>
+          </nav>
+        </div>
+
+        {/* Main Controls */}
+        <div className="flex-1 p-8 flex flex-col h-screen overflow-y-auto w-full max-w-full">
+          {/* Header */}
+          <header className="flex justify-between items-center mb-6 shrink-0">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Wellness Overview</h1>
+              <p className="text-[var(--text-muted)] text-sm">Welcome back, Admin. Here is what's happening today.</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right hidden sm:block">
+                <div className="text-sm font-semibold text-slate-800">ABA_HEALTH</div>
+                <div className="text-xs text-[var(--text-muted)]">Super Admin</div>
+              </div>
+              <div className="w-10 h-10 bg-[var(--accent)] rounded-full flex items-center justify-center text-white shadow-sm border border-blue-600/20">
+                <LayoutDashboard className="w-5 h-5" />
+              </div>
+              <button 
+                onClick={onLogout}
+                className="ml-2 w-10 h-10 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                title="Log Out"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+            </div>
+          </header>
+
+          <AnimatePresence mode="wait">
+              {activeTab === 'analytics' ? (
+                <motion.div 
+                  key="analytics-tab"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                >
+                  <AnalyticsDashboard />
+                </motion.div>
+              ) : activeTab === 'orders' ? (
+                 <motion.div 
+                   key="orders-tab"
+                   initial={{ opacity: 0, x: 20 }}
+                   animate={{ opacity: 1, x: 0 }}
+                   exit={{ opacity: 0, x: -20 }}
+                   className="space-y-6"
+                 >
+                    <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-6 shadow-sm">
+                        <div className="flex justify-between items-center mb-6">
+                            <div className="flex items-center gap-3">
+                                <ShoppingBag className="w-5 h-5 text-[var(--accent)]" />
+                                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Order Management</h2>
+                            </div>
+                        </div>
+
+                        <div className="overflow-x-auto text-left">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="border-b border-slate-200 bg-slate-50/50">
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Order ID</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Customer</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Date</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Total</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {orders.length === 0 ? (
+                                        <tr><td colSpan={6} className="py-8 text-center text-slate-500 font-medium text-sm">No orders found.</td></tr>
+                                    ) : (
+                                        orders.map((order) => (
+                                            <tr key={order.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                                                <td className="py-3 px-4 text-sm font-semibold text-slate-900">
+                                                    #{order.id.toString().slice(-6).toUpperCase()}
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <p className="text-slate-800 font-semibold text-sm">{order.customer_name}</p>
+                                                    <p className="text-slate-400 text-xs">{order.customer_email}</p>
+                                                </td>
+                                                <td className="py-3 px-4 text-sm text-slate-600">
+                                                    {new Date(order.created_at).toLocaleDateString()}
+                                                </td>
+                                                <td className="py-3 px-4 text-slate-900 font-semibold text-sm">
+                                                    Ksh {order.total_amount.toLocaleString()}
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <span className={`px-2 py-1 rounded inline-flex text-xs font-semibold ${getStatusColor(order.status)}`}>
+                                                        {order.status}
+                                                    </span>
+                                                </td>
+                                                <td className="py-3 px-4 text-right">
+                                                    <button 
+                                                        onClick={() => setSelectedOrder(order)}
+                                                        className="px-3 py-1.5 bg-slate-50 hover:bg-[var(--accent)] hover:text-white rounded border border-slate-200 text-xs font-semibold transition-all"
+                                                    >
+                                                        Details
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </motion.div>
+              ) : activeTab === 'hero' ? (
+                <motion.div 
+                  key="hero-tab"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-6"
+                >
+                    <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-6 shadow-sm">
+                        <div className="flex justify-between items-center mb-6">
+                            <div className="flex items-center gap-3">
+                                <Layout className="w-5 h-5 text-[var(--accent)]" />
+                                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Hero Banners ({banners.length}/5)</h2>
+                            </div>
+                            <button 
+                                onClick={handleAddBanner}
+                                disabled={banners.length >= 5}
+                                className="px-4 py-2 bg-[var(--accent)] hover:opacity-90 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-opacity"
+                            >
+                                <Plus className="w-4 h-4" /> Add Banner
+                            </button>
+                        </div>
+
+                        <div className="space-y-12">
+                            {banners.map((banner, index) => (
+                                <div key={banner.id || index} className="group relative bg-slate-50 border border-[var(--border)] rounded-[2rem] p-8 transition-all hover:border-[#15803d]/30">
+                                    <button 
+                                        onClick={() => handleRemoveBanner(index)}
+                                        className="absolute -top-3 -right-3 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform z-10"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+
+                                    <div className="grid lg:grid-cols-3 gap-8">
+                                        {/* Image Section */}
+                                        <div className="lg:col-span-2">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Widescreen Banner Image (16:9 Required)</label>
+                                            <div 
+                                                className="aspect-video bg-white border-2 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center gap-4 cursor-pointer hover:border-[#15803d] transition-all overflow-hidden relative group/img"
+                                                onClick={() => bannerFileInputRefs.current[index]?.click()}
+                                            >
+                                                {banner.image ? (
+                                                    <>
+                                                        <img src={banner.image} className="w-full h-full object-cover" alt="Banner" />
+                                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                                                            <Upload className="w-10 h-10 text-white" />
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <ImageIcon className="w-12 h-12 text-slate-200" />
+                                                        <div className="text-center">
+                                                            <p className="text-[10px] font-black text-slate-400 uppercase">Click to upload 16:9 Banner</p>
+                                                            <p className="text-[9px] text-slate-300 mt-1 uppercase">Recommended: 1920x1080px</p>
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                            <input 
+                                                type="file" 
+                                                ref={el => bannerFileInputRefs.current[index] = el}
+                                                className="hidden" 
+                                                accept="image/*"
+                                                onChange={(e) => handleImageUpload(e, (base64) => handleUpdateBanner(index, { image: base64 }))}
+                                            />
+                                        </div>
+ 
+                                        {/* Settings Section */}
+                                        <div className="lg:col-span-1 space-y-6">
+                                            <div className="space-y-4">
+                                                <div className="p-4 bg-white rounded-2xl border border-[var(--border)]">
+                                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Banner Status</p>
+                                                    <div className="flex items-center gap-2 text-green-600">
+                                                        <CheckCircle2 className="w-4 h-4" />
+                                                        <span className="text-[10px] font-bold uppercase">Ready to Display</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-black uppercase tracking-widest text-[#15803d] ml-1">Click Destination (Link)</label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={banner.link || ''}
+                                                        onChange={(e) => handleUpdateBanner(index, { link: e.target.value })}
+                                                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-[#15803d] transition-all font-bold" 
+                                                        placeholder="e.g. #shop-section"
+                                                    />
+                                                    <p className="text-[9px] text-slate-400 leading-tight px-1">Where should users go when they click this banner? Default is supplements section.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+
+                            {banners.length === 0 && (
+                                <div className="text-center py-20 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200">
+                                    <Layout className="w-16 h-16 text-slate-200 mx-auto mb-4" />
+                                    <p className="text-slate-400 font-bold uppercase tracking-widest">No banners added yet</p>
+                                    <button onClick={handleAddBanner} className="mt-4 text-[#15803d] font-black text-xs uppercase tracking-widest hover:underline">
+                                        Add your first banner
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {banners.length > 0 && (
+                            <div className="mt-12 pt-8 border-t border-[var(--border)]">
+                                <button 
+                                    onClick={handleHeroSave}
+                                    className="w-full bg-[#15803d] hover:bg-[#114022] text-white py-4 rounded-xl font-black text-lg tracking-widest transition-all hover:shadow-[0_10px_30px_rgba(21,128,61,0.4)] flex items-center justify-center gap-3 active:scale-95 shadow-xl"
+                                >
+                                    <Save className="w-6 h-6" /> SAVE ALL BANNERS
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </motion.div>
+              ) : activeTab === 'products' ? (
+                <motion.div 
+                  key="products-tab"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-6"
+                >
+                    <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-6 shadow-sm">
+                        <div className="flex justify-between items-center mb-6">
+                            <div className="flex items-center gap-3">
+                                <Package className="w-5 h-5 text-[var(--accent)]" />
+                                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Product Management</h2>
+                            </div>
+                            <button 
+                              onClick={openAddModal}
+                              className="px-4 py-2 bg-[var(--accent)] hover:opacity-90 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-opacity shadow-sm"
+                            >
+                                <Plus className="w-4 h-4" /> Add Product
+                            </button>
+                        </div>
+
+                        <div className="overflow-x-auto text-left">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="border-b border-slate-200 bg-slate-50/50">
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Product Info</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Price</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {products.map((product) => (
+                                        <tr key={product.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors group">
+                                            <td className="py-3 px-4">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-10 h-10 bg-white border border-slate-200 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm">
+                                                        {product.image ? (
+                                                            <img src={product.image} className="w-full h-full object-contain p-1" alt={product.title} />
+                                                        ) : (
+                                                            <Package className="w-5 h-5 text-slate-300" />
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-slate-800 font-semibold text-sm leading-tight">{product.title}</p>
+                                                        <p className="text-slate-400 text-xs">{product.brand}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="py-3 px-4 text-slate-900 font-semibold text-sm">
+                                                Ksh {product.price.toLocaleString()}
+                                            </td>
+                                            <td className="py-3 px-4">
+                                                <button 
+                                                    onClick={() => handleToggleProductStatus(product.id, product.inStock)}
+                                                    className={`px-2 py-1 rounded inline-flex text-xs font-semibold transition-all ${product.inStock ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}
+                                                >
+                                                    {product.inStock ? 'In Stock' : 'Out of Stock'}
+                                                </button>
+                                            </td>
+                                            <td className="py-3 px-4 text-right">
+                                                <div className="flex items-center justify-end gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
+                                                    <button 
+                                                      onClick={() => openEditModal(product)}
+                                                      className="p-1.5 hover:bg-slate-100 rounded text-slate-400 hover:text-[var(--accent)] transition-colors"
+                                                      title="Edit"
+                                                    >
+                                                      <Edit2 className="w-4 h-4" />
+                                                    </button>
+                                                    <button 
+                                                      onClick={() => { 
+                                                        setConfirmModal({
+                                                          title: 'Delete Product',
+                                                          message: `Are you sure you want to delete "${product.title}"?`,
+                                                          confirmText: 'Delete',
+                                                          onConfirm: () => {
+                                                            deleteProduct(product.id);
+                                                            setConfirmModal(null);
+                                                            setNotification({ message: 'Product deleted successfully', type: 'success' });
+                                                          }
+                                                        });
+                                                      }}
+                                                      className="p-1.5 hover:bg-red-50 hover:text-red-600 rounded text-slate-400 transition-colors"
+                                                      title="Delete"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </motion.div>
+              ) : activeTab === 'inquiries' ? (
+                <motion.div 
+                  key="inquiries-tab"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-6"
+                >
+                    <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-6 shadow-sm">
+                        <div className="flex justify-between items-center mb-6">
+                            <div className="flex items-center gap-3">
+                                <MessageSquare className="w-5 h-5 text-[var(--accent)]" />
+                                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Customer Inquiries</h2>
+                            </div>
+                            <button 
+                              onClick={downloadCSV}
+                              disabled={inquiries.length === 0}
+                              className="px-4 py-2 bg-[var(--accent)] hover:opacity-90 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-opacity shadow-sm"
+                            >
+                                <Download className="w-4 h-4" /> Download CSV
+                            </button>
+                        </div>
+
+                        <div className="overflow-x-auto text-left">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="border-b border-slate-200 bg-slate-50/50">
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Date</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Customer</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Subject</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Message</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {loadingInquiries ? (
+                                        <tr><td colSpan={4} className="py-8 text-center text-slate-500 font-medium text-sm">Loading inquiries...</td></tr>
+                                    ) : inquiries.length === 0 ? (
+                                        <tr><td colSpan={4} className="py-8 text-center text-slate-500 font-medium text-sm">No inquiries received yet.</td></tr>
+                                    ) : (
+                                        inquiries.map((iq) => (
+                                            <tr 
+                                                key={iq.id} 
+                                                className="border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer group"
+                                                onClick={() => setSelectedInquiry(iq)}
+                                            >
+                                                <td className="py-3 px-4 text-sm text-slate-600 whitespace-nowrap group-hover:text-[var(--accent)] transition-colors">
+                                                    {new Date(iq.created_at).toLocaleDateString()}
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <p className="text-slate-800 font-semibold text-sm">{iq.first_name} {iq.last_name}</p>
+                                                    <a onClick={(e) => e.stopPropagation()} href={`mailto:${iq.email}`} className="text-[var(--accent)] hover:underline text-xs">{iq.email}</a>
+                                                </td>
+                                                <td className="py-3 px-4 text-slate-900 font-semibold text-sm">
+                                                    {iq.subject}
+                                                </td>
+                                                <td className="py-3 px-4 text-slate-600 text-sm max-w-xs truncate" title={iq.message}>
+                                                    {iq.message}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </motion.div>
+              ) : activeTab === 'settings' ? (
+                <motion.div 
+                  key="settings-tab"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-6"
+                >
+                    <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-6 shadow-sm">
+                        <div className="flex items-center gap-3 mb-6">
+                            <Settings className="w-5 h-5 text-[var(--accent)]" />
+                            <h2 className="text-xl font-bold text-slate-900 tracking-tight">System Settings</h2>
+                        </div>
+
+                        <div className="space-y-8">
+                            {/* Email Integration Section */}
+                            <div className="bg-slate-50 border border-[var(--border)] rounded-xl p-5">
+                                <div className="flex items-center gap-3 mb-5">
+                                    <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center border border-[var(--border)] shadow-sm">
+                                        <Mail className="w-5 h-5 text-[var(--accent)]" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-slate-900">Email Notifications</h3>
+                                        <p className="text-xs text-[var(--text-muted)] mt-0.5">Connect Gmail to send automated order receipts</p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-5 max-w-2xl">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-semibold text-slate-700">Google OAuth Client ID</label>
+                                        <input 
+                                            type="text" 
+                                            value={clientIdInput}
+                                            onChange={(e) => setClientIdInput(e.target.value)}
+                                            placeholder="Enter your Google Client ID here..."
+                                            className="w-full bg-white border border-[var(--border)] rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20 focus:border-[var(--accent)] transition-all" 
+                                        />
+                                    </div>
+
+                                    <div className="pt-2">
+                                        {emailSettings ? (
+                                            <div className="flex flex-col sm:flex-row items-center gap-4">
+                                                <div className="flex-grow flex items-center gap-3 bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3 w-full">
+                                                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                                                    <div>
+                                                        <p className="text-xs font-semibold text-emerald-700">Connected Account</p>
+                                                        <p className="text-sm font-bold text-slate-900">{emailSettings.connectedEmail}</p>
+                                                    </div>
+                                                </div>
+                                                <button 
+                                                    onClick={handleDisconnectEmail}
+                                                    className="px-4 py-2 bg-white hover:bg-red-50 text-red-600 border border-[var(--border)] hover:border-red-200 rounded-lg text-sm font-semibold transition-all whitespace-nowrap"
+                                                >
+                                                    Disconnect
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <button 
+                                                onClick={handleConnectEmail}
+                                                disabled={isConnecting}
+                                                className="w-full sm:w-auto px-6 py-2.5 bg-[var(--accent)] hover:opacity-90 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-opacity shadow-sm"
+                                            >
+                                                {isConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                                                {isConnecting ? 'Connecting...' : 'Connect Gmail Account'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
+        </div>
+
+      {/* Order Detail Modal */}
+      <AnimatePresence>
+        {selectedOrder && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+               initial={{ opacity: 0 }}
+               animate={{ opacity: 1 }}
+               exit={{ opacity: 0 }}
+               onClick={() => setSelectedOrder(null)}
+               className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div 
+               initial={{ opacity: 0, scale: 0.9, y: 20 }}
+               animate={{ opacity: 1, scale: 1, y: 0 }}
+               exit={{ opacity: 0, scale: 0.9, y: 20 }}
+               className="relative w-full max-w-3xl bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-8 shadow-sm z-10 max-h-[90vh] overflow-y-auto custom-scrollbar"
+            >
+                <div className="flex justify-between items-center mb-6">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-[var(--accent)] rounded-lg flex items-center justify-center text-white shadow-sm">
+                            <ShoppingBag className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-900 tracking-tight">
+                                Order Details
+                            </h2>
+                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">#{selectedOrder.id}</p>
+                        </div>
+                    </div>
+                    <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-900 transition-colors">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-6 mb-6">
+                    <div className="space-y-6">
+                        <div>
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Customer Info</p>
+                            <div className="bg-slate-50 p-5 rounded-lg border border-slate-200 space-y-2">
+                                <p className="font-bold text-slate-900">{selectedOrder.customer_name}</p>
+                                <p className="text-sm text-slate-600">{selectedOrder.customer_email}</p>
+                                <div className="pt-2">
+                                     <span className={`px-2 py-1 rounded-full text-[8px] font-black uppercase tracking-tighter border ${getStatusColor(selectedOrder.status)}`}>
+                                        Order {selectedOrder.status}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-[#15803d] mb-2">Order Timeline</p>
+                            <div className="space-y-4 ml-2">
+                                <div className="flex gap-4 relative">
+                                    <div className="absolute left-[11px] top-6 bottom-0 w-px bg-slate-100" />
+                                    <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center text-white z-10 relative">
+                                        <CheckCircle2 className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-900">Order Placed</p>
+                                        <p className="text-[10px] text-slate-400">{new Date(selectedOrder.created_at).toLocaleString()}</p>
+                                    </div>
+                                </div>
+                                {selectedOrder.status !== 'pending' && (
+                                    <div className="flex gap-4 relative">
+                                        {selectedOrder.status === 'completed' && <div className="absolute left-[11px] top-6 bottom-0 w-px bg-slate-100" />}
+                                        <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-white z-10 relative">
+                                            <Truck className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-900">Dispatched</p>
+                                            <p className="text-[10px] text-slate-400">Handed to carrier</p>
+                                        </div>
+                                    </div>
+                                )}
+                                {selectedOrder.status === 'completed' && (
+                                    <div className="flex gap-4">
+                                        <div className="w-6 h-6 rounded-full bg-[#15803d] flex items-center justify-center text-white z-10 relative">
+                                            <CheckCircle2 className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-900">Order Completed</p>
+                                            <p className="text-[10px] text-slate-400">Delivered successfully</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-[#15803d] mb-2">Order Items</p>
+                        <div className="bg-slate-50 rounded-3xl border border-[var(--border)] overflow-hidden">
+                            <div className="p-6 space-y-4 max-h-[300px] overflow-y-auto custom-scrollbar">
+                                {selectedOrder.order_items?.map((item, idx) => (
+                                    <div key={idx} className="flex gap-4 items-center">
+                                        <div className="w-12 h-12 bg-white rounded-xl border border-slate-200 flex items-center justify-center overflow-hidden">
+                                            {item.products?.image ? (
+                                                <img src={item.products.image} className="w-full h-full object-contain p-1" alt={item.products.title} />
+                                            ) : (
+                                                <Package className="w-6 h-6 text-slate-100" />
+                                            )}
+                                        </div>
+                                        <div className="flex-grow">
+                                            <p className="text-xs font-bold text-slate-900 leading-tight">{item.products?.title || 'Unknown Product'}</p>
+                                            <p className="text-[10px] text-slate-400">{item.quantity} x Ksh {item.price_at_sale.toLocaleString()}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-xs font-black text-slate-900">Ksh {(item.quantity * item.price_at_sale).toLocaleString()}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="bg-white p-6 border-t border-[var(--border)] flex justify-between items-center">
+                                <span className="font-display font-black text-sm uppercase tracking-widest text-slate-400">Grand Total</span>
+                                <span className="font-display font-black text-2xl text-[#15803d]">Ksh {selectedOrder.total_amount.toLocaleString()}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="pt-8 border-t border-[var(--border)] flex flex-wrap gap-4">
+                    {selectedOrder.status === 'pending' && (
+                        <button 
+                            disabled={isSendingEmail}
+                            onClick={async () => { 
+                                setIsSendingEmail(true);
+                                try {
+                                    await updateOrderStatus(selectedOrder.id, 'dispatched');
+                                    
+                                    if (emailSettings) {
+                                        try {
+                                            await sendDispatchReceipt(emailSettings, selectedOrder);
+                                            console.log('Dispatch email sent successfully');
+                                        } catch (err) {
+                                            console.error('Failed to send dispatch email:', err);
+                                            setNotification({ 
+                                                message: 'Order updated, but receipt email failed to send. Check Gmail connection.', 
+                                                type: 'error' 
+                                            });
+                                        }
+                                    }
+                                    
+                                    setSelectedOrder(null);
+                                } catch (error) {
+                                    console.error('Failed to dispatch order:', error);
+                                } finally {
+                                    setIsSendingEmail(false);
+                                }
+                            }}
+                            className="flex-1 min-w-[200px] bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white py-4 rounded-2xl font-black text-sm tracking-widest transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3"
+                        >
+                            {isSendingEmail ? <Loader2 className="w-5 h-5 animate-spin" /> : <Truck className="w-5 h-5" />} 
+                            {isSendingEmail ? 'SENDING RECEIPT...' : 'DISPATCH ORDER'}
+                        </button>
+                    )}
+                    {selectedOrder.status === 'dispatched' && (
+                        <button 
+                            onClick={() => { updateOrderStatus(selectedOrder.id, 'completed'); setSelectedOrder(null); }}
+                            className="flex-1 min-w-[200px] bg-[#15803d] hover:bg-[#114022] text-white py-4 rounded-2xl font-black text-sm tracking-widest transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3"
+                        >
+                            <CheckCircle2 className="w-5 h-5" /> MARK AS COMPLETED
+                        </button>
+                    )}
+                    <button 
+                        onClick={() => setSelectedOrder(null)}
+                        className="px-8 py-4 bg-slate-50 hover:bg-slate-100 text-slate-500 rounded-2xl font-black text-sm tracking-widest transition-all border border-slate-200"
+                    >
+                        CLOSE
+                    </button>
+                </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Custom Confirm Modal */}
+      <AnimatePresence>
+        {confirmModal && (
+          <div className="fixed inset-0 z-[250] flex items-center justify-center p-4">
+            <motion.div 
+               initial={{ opacity: 0 }}
+               animate={{ opacity: 1 }}
+               exit={{ opacity: 0 }}
+               onClick={() => setConfirmModal(null)}
+               className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+               initial={{ opacity: 0, scale: 0.9, y: 20 }}
+               animate={{ opacity: 1, scale: 1, y: 0 }}
+               exit={{ opacity: 0, scale: 0.9, y: 20 }}
+               className="relative w-full max-w-md bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-8 shadow-sm z-10"
+            >
+                <div className="text-center">
+                    <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center text-red-500 mx-auto mb-6">
+                        <Trash2 className="w-8 h-8" />
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-900 tracking-tight mb-2">
+                        {confirmModal.title}
+                    </h3>
+                    <p className="text-slate-500 text-sm mb-8 leading-relaxed">
+                        {confirmModal.message}
+                    </p>
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={() => setConfirmModal(null)}
+                            className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg font-semibold text-sm transition-colors"
+                        >
+                            {confirmModal.cancelText || 'Cancel'}
+                        </button>
+                        <button 
+                            onClick={confirmModal.onConfirm}
+                            className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm transition-colors shadow-sm"
+                        >
+                            {confirmModal.confirmText || 'Confirm'}
+                        </button>
+                    </div>
+                </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Inquiry Detail Modal */}
+      <AnimatePresence>
+        {selectedInquiry && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedInquiry(null)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-2xl bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-8 shadow-sm z-10"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-[var(--accent)] rounded-lg flex items-center justify-center text-white shadow-sm">
+                    <MessageSquare className="w-5 h-5" />
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 tracking-tight">
+                    Inquiry Details
+                  </h2>
+                </div>
+                <button onClick={() => setSelectedInquiry(null)} className="p-2 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-900 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-6 text-left">
+                <div className="grid grid-cols-2 gap-4 bg-slate-50 p-5 rounded-lg border border-[var(--border)]">
+                    <div>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Customer</p>
+                        <p className="font-bold text-slate-900">{selectedInquiry.first_name} {selectedInquiry.last_name}</p>
+                        <p className="text-sm text-[var(--accent)]">{selectedInquiry.email}</p>
+                    </div>
+                    <div>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Date Submitted</p>
+                        <p className="font-bold text-slate-900">{new Date(selectedInquiry.created_at).toLocaleString()}</p>
+                    </div>
+                </div>
+
+                <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 ml-1">Subject</p>
+                    <p className="font-bold text-lg text-slate-900">{selectedInquiry.subject}</p>
+                </div>
+
+                <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 ml-1">Message</p>
+                    <div className="bg-slate-50 p-5 rounded-lg border border-[var(--border)] text-slate-700 leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto custom-scrollbar text-sm">
+                        {selectedInquiry.message}
+                    </div>
+                </div>
+              </div>
+
+              <div className="mt-8 pt-6 border-t border-[var(--border)] flex gap-4">
+                  <a 
+                    href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(selectedInquiry.email)}&su=${encodeURIComponent(`Re: ${selectedInquiry.subject}`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 bg-[var(--accent)] hover:opacity-90 text-white py-3 rounded-lg font-semibold text-sm transition-opacity flex items-center justify-center gap-2 text-center"
+                  >
+                    <Mail className="w-4 h-4" /> Reply via Gmail
+                  </a>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Product Edit/Add Modal */}
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsModalOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-2xl bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-8 shadow-sm z-10 max-h-[90vh] overflow-y-auto custom-scrollbar"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-[var(--accent)] rounded-lg flex items-center justify-center text-white shadow-sm">
+                    {modalMode === 'add' ? <Plus className="w-5 h-5" /> : <Edit2 className="w-5 h-5" />}
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 tracking-tight">
+                    {modalMode === 'add' ? 'Add New Product' : 'Edit Product'}
+                  </h2>
+                </div>
+                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-900 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveProduct} className="space-y-6">
+                <div className="flex flex-col md:flex-row gap-8 mb-4">
+                    {/* Image Upload Area */}
+                    <div className="w-full md:w-1/3 flex flex-col gap-3">
+                        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Product Photo</label>
+                        <div 
+                            className="aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-3 group cursor-pointer hover:border-[var(--accent)] hover:bg-slate-100/50 transition-all overflow-hidden relative"
+                            onClick={() => productFileInputRef.current?.click()}
+                        >
+                            {editingProduct?.image ? (
+                                <>
+                                    <img src={editingProduct.image} className="w-full h-full object-contain p-4" alt="Preview" />
+                                    <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                        <CloudUpload className="w-8 h-8 text-[var(--accent)]" />
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="w-10 h-10 bg-white shadow-sm border border-slate-100 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                                        <CloudUpload className="w-5 h-5 text-slate-400 group-hover:text-[var(--accent)]" />
+                                    </div>
+                                    <div className="text-center px-4">
+                                        <p className="text-slate-700 font-semibold text-sm">Click to upload</p>
+                                        <p className="text-slate-400 text-xs mt-1">PNG, JPG up to 2MB</p>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                        <input 
+                            type="file" 
+                            ref={productFileInputRef}
+                            className="hidden" 
+                            accept="image/*"
+                            onChange={(e) => handleImageUpload(e, (base64) => setEditingProduct({...editingProduct!, image: base64}))}
+                        />
+                    </div>
+
+                    <div className="flex-1 space-y-5">
+                        <div className="space-y-1.5 text-left">
+                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Product Title</label>
+                            <input 
+                                type="text" 
+                                required
+                                value={editingProduct?.title || ''}
+                                onChange={(e) => setEditingProduct({...editingProduct!, title: e.target.value})}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] transition-all font-medium text-sm" 
+                                placeholder="e.g. Omega-3 Fish Oil"
+                            />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-left">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Brand Name</label>
+                                <input 
+                                    type="text" 
+                                    required
+                                    value={editingProduct?.brand || ''}
+                                    onChange={(e) => setEditingProduct({...editingProduct!, brand: e.target.value})}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] transition-all text-sm" 
+                                    placeholder="e.g. Natural Factors"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Price (KSh)</label>
+                                <input 
+                                    type="number" 
+                                    required
+                                    value={editingProduct?.price || ''}
+                                    onChange={(e) => setEditingProduct({...editingProduct!, price: Number(e.target.value)})}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] transition-all text-sm" 
+                                    placeholder="0"
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-4 text-left">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Composition</label>
+                                <textarea 
+                                    rows={2}
+                                    required
+                                    value={editingProduct?.composition || ''}
+                                    onChange={(e) => setEditingProduct({...editingProduct!, composition: e.target.value})}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] transition-all resize-none text-sm" 
+                                    placeholder="e.g. 10 Strains for Optimal Gut Flora"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Description</label>
+                                <textarea 
+                                    rows={3}
+                                    required
+                                    value={editingProduct?.description || ''}
+                                    onChange={(e) => setEditingProduct({...editingProduct!, description: e.target.value})}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] transition-all resize-none text-sm" 
+                                    placeholder="e.g. A premium health supplement designed for..."
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-6 items-end">
+                    <div className="space-y-1.5 text-left">
+                        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Manual Image URL (Optional)</label>
+                        <input 
+                            type="text" 
+                            value={editingProduct?.image || ''}
+                            onChange={(e) => setEditingProduct({...editingProduct!, image: e.target.value})}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] transition-all text-xs" 
+                            placeholder="/images/product.png"
+                        />
+                    </div>
+                    <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200 cursor-pointer h-[42px] mb-[1px] hover:border-[var(--accent)] transition-colors" onClick={() => setEditingProduct({...editingProduct!, inStock: !editingProduct?.inStock})}>
+                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${editingProduct?.inStock ? 'bg-[var(--accent)] border-[var(--accent)]' : 'border-slate-300'}`}>
+                            {editingProduct?.inStock && <Check className="w-3.5 h-3.5 text-white" />}
+                        </div>
+                        <span className="text-slate-700 font-semibold text-xs tracking-wider uppercase">In Stock</span>
+                    </div>
+                </div>
+
+                <div className="flex gap-4 pt-6 border-t border-[var(--border)]">
+                  <button 
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg font-semibold text-sm transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-[2] bg-[var(--accent)] hover:opacity-90 text-white py-2.5 rounded-lg font-semibold text-sm transition-opacity flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <Save className="w-4 h-4" /> {modalMode === 'add' ? 'Add To Shop' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
