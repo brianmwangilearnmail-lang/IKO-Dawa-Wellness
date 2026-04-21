@@ -1,33 +1,36 @@
 import React, { useState } from 'react';
-import { ShieldAlert, ArrowRight, Lock, User } from 'lucide-react';
+import { ShieldAlert, ArrowRight, Lock, Mail } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 interface AdminLoginPageProps {
   onLogin: () => void;
 }
 
 export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLogin }) => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
     setError('');
 
-    // Credentials: IKODAWA / IKODAWA@321
-    setTimeout(() => {
-      if (username === 'IKODAWA' && password === 'IKODAWA@321') {
-        onLogin();
-      } else {
-        setError('Invalid username or password. Please try again.');
-        setIsLoggingIn(false);
-      }
-    }, 1000);
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (authError) {
+      setError(authError.message || 'Invalid email or password.');
+      setIsLoggingIn(false);
+    } else {
+      onLogin(); // App.tsx handles state
+    }
   };
 
   return (
@@ -56,15 +59,15 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLogin }) => {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider ml-1">Username</label>
+            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider ml-1">Email Address</label>
             <div className="relative">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl px-10 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors text-sm placeholder:text-slate-600"
-                placeholder="Enter username"
+                placeholder="admin@ikodawa.com"
                 required
               />
             </div>
