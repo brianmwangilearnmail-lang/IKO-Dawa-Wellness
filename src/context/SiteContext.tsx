@@ -148,9 +148,11 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async function loadData() {
       setLoading(true);
       
-      // Fetch products
+      // Fetch products and map snake_case to camelCase
       const { data: dbProducts } = await supabase.from('products').select('*').order('id', { ascending: true });
-      if (dbProducts) setProducts(dbProducts as Product[]);
+      if (dbProducts) {
+        setProducts(dbProducts.map((p: any) => ({ ...p, inStock: p.in_stock })) as Product[]);
+      }
 
       // Fetch hero banners
       const { data: dbHero } = await supabase.from('hero_banners').select('*').order('order_index', { ascending: true });
@@ -179,26 +181,39 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // 2. Wrap update functions to push to Supabase
   const updateHero = async (banners: HeroBanner[]) => {
-    // In a real app we'd sync this with DB. For now, local state update:
     setHero(banners);
     for (const b of banners) {
-      if (b.id) {
-        await supabase.from('hero_banners').update(b).eq('id', b.id);
+      // Strip UI-only specific dummy fields the db does not know about
+      const { titleTop, titleBottom, active, ...dbPayload } = b as any; 
+      
+      if (dbPayload.id) {
+        await supabase.from('hero_banners').update(dbPayload).eq('id', dbPayload.id);
+      } else {
+        await supabase.from('hero_banners').insert([dbPayload]);
       }
     }
   };
 
   const updateProduct = async (id: number, updates: Partial<Product>) => {
     setProducts(prev => prev.map(p => (p.id === id ? { ...p, ...updates } : p)));
-    await supabase.from('products').update(updates).eq('id', id);
+    
+    // Map camelCase to snake_case for Supabase
+    const { inStock, ...rest } = updates;
+    const dbPayload = { ...rest, ...(inStock !== undefined && { in_stock: inStock }) };
+    
+    await supabase.from('products').update(dbPayload).eq('id', id);
   };
 
   const addProduct = async (product: Omit<Product, 'id'>) => {
-    const { data, error } = await supabase.from('products').insert([product]).select().single();
+    // Map camelCase to snake_case
+    const { inStock, ...rest } = product;
+    const dbPayload = { ...rest, in_stock: inStock };
+    
+    const { data, error } = await supabase.from('products').insert([dbPayload]).select().single();
     if (data) {
-      setProducts(prev => [...prev, data as Product]);
+      setProducts(prev => [...prev, { ...data, inStock: data.in_stock } as Product]);
     } else {
-      console.error(error);
+      console.error('Failed to add product:', error);
     }
   };
 
