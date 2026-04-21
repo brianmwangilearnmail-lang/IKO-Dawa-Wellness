@@ -132,64 +132,135 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
+import { supabase } from '../lib/supabase';
+
 export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<Product[]>(SAMPLE_PRODUCTS);
-  const [hero, setHero] = useState<HeroBanner[]>(SAMPLE_HERO);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [hero, setHero] = useState<HeroBanner[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [analytics] = useState<SiteAnalytics>(SAMPLE_ANALYTICS);
   const [inventoryBatches] = useState<InventoryBatch[]>(SAMPLE_INVENTORY);
-  const [siteContent, setSiteContent] = useState<SiteContent>(() => {
-    // Persist edits to localStorage until Supabase is wired up
-    try {
-      const saved = localStorage.getItem('iko_site_content');
-      return saved ? { ...DEFAULT_SITE_CONTENT, ...JSON.parse(saved) } : DEFAULT_SITE_CONTENT;
-    } catch {
-      return DEFAULT_SITE_CONTENT;
-    }
-  });
-  const [loading] = useState(false);
+  const [siteContent, setSiteContent] = useState<SiteContent>(DEFAULT_SITE_CONTENT);
+  const [loading, setLoading] = useState(true);
 
+  // 1. Fetch from Supabase on mount
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      
+      // Fetch products
+      const { data: dbProducts } = await supabase.from('products').select('*').order('id', { ascending: true });
+      if (dbProducts) setProducts(dbProducts as Product[]);
+
+      // Fetch hero banners
+      const { data: dbHero } = await supabase.from('hero_banners').select('*').order('order_index', { ascending: true });
+      if (dbHero) setHero(dbHero as HeroBanner[]);
+
+      // Fetch orders
+      const { data: dbOrders } = await supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false });
+      if (dbOrders) setOrders(dbOrders as Order[]);
+
+      // Fetch site content
+      const { data: dbContent } = await supabase.from('site_content').select('*');
+      if (dbContent) {
+        // Convert array of {key, value} to Record<string, string>
+        const contentMap: SiteContent = { ...DEFAULT_SITE_CONTENT };
+        dbContent.forEach(item => {
+          contentMap[item.key] = item.value;
+        });
+        setSiteContent(contentMap);
+      }
+
+      setLoading(false);
+    }
+    
+    loadData();
+  }, []);
+
+  // 2. Wrap update functions to push to Supabase
   const updateHero = async (banners: HeroBanner[]) => {
+    // In a real app we'd sync this with DB. For now, local state update:
     setHero(banners);
+    for (const b of banners) {
+      if (b.id) {
+        await supabase.from('hero_banners').update(b).eq('id', b.id);
+      }
+    }
   };
 
-  const updateProduct = async (id: number, product: Partial<Product>) => {
-    setProducts(prev => prev.map(p => (p.id === id ? { ...p, ...product } : p)));
+  const updateProduct = async (id: number, updates: Partial<Product>) => {
+    setProducts(prev => prev.map(p => (p.id === id ? { ...p, ...updates } : p)));
+    await supabase.from('products').update(updates).eq('id', id);
   };
 
   const addProduct = async (product: Omit<Product, 'id'>) => {
-    const newProduct = { ...product, id: Math.max(0, ...products.map(p => p.id)) + 1 };
-    setProducts(prev => [...prev, newProduct]);
+    const { data, error } = await supabase.from('products').insert([product]).select().single();
+    if (data) {
+      setProducts(prev => [...prev, data as Product]);
+    } else {
+      console.error(error);
+    }
   };
 
   const deleteProduct = async (id: number) => {
     setProducts(prev => prev.filter(p => p.id !== id));
+    await supabase.from('products').delete().eq('id', id);
   };
 
   const updateOrderStatus = async (id: string | number, status: Order['status']) => {
     setOrders(prev => prev.map(o => (o.id === id ? { ...o, status } : o)));
+    await supabase.from('orders').update({ status }).eq('id', id);
   };
 
   const createOrder = async (orderData: any) => {
-    const newId = `ORD-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-    const newOrder: Order = {
-      ...orderData,
-      id: newId,
-      created_at: new Date().toISOString(),
-      status: 'pending',
-    };
-    setOrders(prev => [newOrder, ...prev]);
-    return newId;
+    try {
+      // Create the parent order
+      const { data: orderResult, error: orderErr } = await supabase
+        .from('orders')
+        .insert([{
+          customer_name: orderData.customer_name,
+          customer_email: orderData.customer_email,
+          total_amount: orderData.total_amount,
+          status: orderData.status
+        }])
+        .select()
+        .single();
+        
+      if (orderErr) throw orderErr;
+      
+      // Create the order items
+      if (orderData.order_items && orderData.order_items.length > 0) {
+        const itemsToInsert = orderData.order_items.map((item: any) => ({
+          ...item,
+          order_id: orderResult.id
+        }));
+        
+        const { error: itemsErr } = await supabase.from('order_items').insert(itemsToInsert);
+        if (itemsErr) throw itemsErr;
+      }
+      
+      // Prepend to local state
+      setOrders(prev => [{...orderResult, order_items: orderData.order_items} as Order, ...prev]);
+      
+      return { success: true, id: orderResult.id };
+    } catch (e: any) {
+      console.error('Order creation failed:', e);
+      return { success: false, error: e.message };
+    }
   };
 
   const updateSiteContent = async (updates: SiteContent) => {
     const merged = { ...siteContent, ...updates };
     setSiteContent(merged);
-    try {
-      localStorage.setItem('iko_site_content', JSON.stringify(merged));
-    } catch {
-      // ignore storage errors
-    }
+    
+    // Sync to Supabase
+    // Supabase needs individual rows updated or upserted
+    const upserts = Object.keys(updates).map(key => ({
+      key,
+      value: updates[key]
+    }));
+    
+    await supabase.from('site_content').upsert(upserts, { onConflict: 'key' });
   };
 
   return (
