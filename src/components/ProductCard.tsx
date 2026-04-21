@@ -28,13 +28,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'de
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation();
-    addToCart(product, quantity);
+    addToCart(product);
     setAdded(true);
     setTimeout(() => setAdded(false), 1500);
   };
 
   const handleModalAddToCart = () => {
-    addToCart(product, modalQuantity);
+    addToCart(product);
     setModalQuantity(1);
     setIsModalOpen(false);
   };

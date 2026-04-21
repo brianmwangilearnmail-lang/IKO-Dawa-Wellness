@@ -4,18 +4,16 @@ import { NewArrivalSlider } from '../components/NewArrivalSlider';
 import { ProductCard } from '../components/ProductCard';
 import { ArrowRight } from 'lucide-react';
 import { useSite } from '../context/SiteContext';
+import { useNavigate } from 'react-router-dom';
 
-interface HomePageProps {
-  onPageChange?: (page: 'home' | 'about' | 'contact' | 'science' | 'privacy') => void;
-}
-
-export const HomePage: React.FC<HomePageProps> = ({ onPageChange }) => {
-  const { products } = useSite();
+export const HomePage: React.FC = () => {
+  const { products, siteContent } = useSite();
+  const navigate = useNavigate();
 
   return (
     <div className="bg-white">
       <Hero />
-      
+
       <NewArrivalSlider />
 
       {/* Shop Section */}
@@ -23,10 +21,12 @@ export const HomePage: React.FC<HomePageProps> = ({ onPageChange }) => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-end mb-16 gap-6">
             <div className="max-w-xl">
-               <p className="text-[10px] uppercase tracking-[0.4em] text-emerald-600 font-black mb-4">Precision Selection</p>
-               <h2 className="text-4xl md:text-6xl font-black text-slate-950 leading-[0.9] tracking-tight mb-2">
-                  Essentials for Daily Life
-               </h2>
+              <p className="text-[10px] uppercase tracking-[0.4em] text-emerald-600 font-black mb-4">
+                {siteContent.shop_eyebrow}
+              </p>
+              <h2 className="text-4xl md:text-6xl font-black text-slate-950 leading-[0.9] tracking-tight mb-2">
+                {siteContent.shop_heading}
+              </h2>
             </div>
             <button className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-emerald-600 hover:opacity-80 transition-all group border-b border-emerald-600 pb-1">
               View All Products <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -41,50 +41,44 @@ export const HomePage: React.FC<HomePageProps> = ({ onPageChange }) => {
               </div>
             )}
             {products.map((product) => (
-              <ProductCard 
-                key={product.id}
-                product={product}
-              />
+              <ProductCard key={product.id} product={product} />
             ))}
           </div>
         </div>
       </section>
 
-      {/* Mission Section - Editorial Layout */}
+      {/* Mission Section */}
       <section className="relative z-20 bg-white py-32 border-t border-slate-50 overflow-hidden">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <h2 className="text-5xl md:text-8xl font-black text-slate-950 leading-[0.9] mb-12 tracking-tight">
-              IKO <span className="italic text-emerald-800">DAWA</span>
+              {siteContent.mission_heading_plain}{' '}
+              <span className="italic text-emerald-800">{siteContent.mission_heading_italic}</span>
             </h2>
             <div className="space-y-8 text-slate-500 text-lg md:text-xl leading-relaxed font-medium mb-16">
-              <p>
-                At IKO DAWA Wellness Centre, the divide between nature and clinical efficacy doesn't exist. We operate at the intersection of biological wisdom and laboratory precision.
-              </p>
-              <p>
-                Founded by clinical researchers who grew tired of industry opaque blends, we built a sanctuary for purity. We remove the excess, keep the essence, and ensure every grain serves your health.
-              </p>
+              <p>{siteContent.mission_body_1}</p>
+              <p>{siteContent.mission_body_2}</p>
             </div>
-            
+
             <div className="flex flex-col sm:flex-row items-center justify-center gap-6 md:gap-10">
-               <button 
-                 onClick={() => onPageChange?.('about')}
-                 className="w-full sm:w-auto bg-slate-950 text-white px-12 py-5 rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-xl active:scale-95"
-               >
-                  Our Philosophy
-               </button>
-               <button 
-                 onClick={() => onPageChange?.('contact')}
-                 className="w-full sm:w-auto bg-emerald-600 text-white px-12 py-5 rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-slate-900 transition-all shadow-xl active:scale-95"
-               >
-                  Contact Us
-               </button>
-               <button 
-                 onClick={() => onPageChange?.('science')}
-                 className="text-slate-950 font-black text-xs uppercase tracking-widest flex items-center gap-2 group"
-               >
-                  View Trials <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform text-emerald-600" />
-               </button>
+              <button
+                onClick={() => navigate('/about')}
+                className="w-full sm:w-auto bg-slate-950 text-white px-12 py-5 rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-xl active:scale-95"
+              >
+                {siteContent.mission_btn_philosophy}
+              </button>
+              <button
+                onClick={() => navigate('/contact')}
+                className="w-full sm:w-auto bg-emerald-600 text-white px-12 py-5 rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-slate-900 transition-all shadow-xl active:scale-95"
+              >
+                {siteContent.mission_btn_contact}
+              </button>
+              <button
+                onClick={() => navigate('/science')}
+                className="text-slate-950 font-black text-xs uppercase tracking-widest flex items-center gap-2 group"
+              >
+                {siteContent.mission_btn_trials} <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform text-emerald-600" />
+              </button>
             </div>
           </div>
         </div>

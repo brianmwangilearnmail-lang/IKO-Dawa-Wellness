@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { LayoutDashboard, Plus, Trash2, Edit2, LogOut, Package, Image as ImageIcon, Layout, Save, X, Check, Upload, CloudUpload, BarChart3, MessageSquare, Download, Mail, ShoppingBag, Clock, CheckCircle2, Truck, Settings, Loader2, Info } from 'lucide-react';
+import { LayoutDashboard, Plus, Trash2, Edit2, LogOut, Package, Image as ImageIcon, Layout, Save, X, Check, Upload, CloudUpload, BarChart3, MessageSquare, Download, Mail, ShoppingBag, Clock, CheckCircle2, Truck, Settings, Loader2, Info, FileText, ChevronDown, ChevronUp, Globe } from 'lucide-react';
 import { getEmailSettings, connectGmail, clearEmailSettings, sendDispatchReceipt, EmailSettings } from '../lib/emailService';
 import { motion, AnimatePresence } from 'motion/react';
-import { useSite } from '../context/SiteContext';
-import { Product, Order, HeroBanner } from '../types';
+import { useSite, DEFAULT_SITE_CONTENT } from '../context/SiteContext';
+import { Product, Order, HeroBanner, SiteContent } from '../types';
 import { AnalyticsDashboard } from '../components/AnalyticsDashboard';
 import { supabase } from '../lib/supabase';
 
@@ -12,8 +12,31 @@ interface AdminDashboardPageProps {
 }
 
 export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout }) => {
-  const { products, hero, orders, updateHero, updateProduct, addProduct, deleteProduct, updateOrderStatus } = useSite();
-  const [activeTab, setActiveTab] = useState<'hero' | 'products' | 'analytics' | 'inquiries' | 'orders' | 'settings'>('analytics');
+  const { products, hero, orders, siteContent, updateHero, updateProduct, addProduct, deleteProduct, updateOrderStatus, updateSiteContent } = useSite();
+  const [activeTab, setActiveTab] = useState<'hero' | 'products' | 'analytics' | 'inquiries' | 'orders' | 'settings' | 'content'>('analytics');
+
+  // Site Content editor state
+  const [contentDraft, setContentDraft] = useState<SiteContent>({});
+  const [contentSaving, setContentSaving] = useState(false);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ branding: true });
+
+  useEffect(() => {
+    if (activeTab === 'content') {
+      setContentDraft({ ...DEFAULT_SITE_CONTENT, ...siteContent });
+    }
+  }, [activeTab, siteContent]);
+
+  const toggleSection = (key: string) => setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const handleContentSave = async () => {
+    setContentSaving(true);
+    await updateSiteContent(contentDraft);
+    setTimeout(() => setContentSaving(false), 600);
+    setNotification({ message: 'Site content saved successfully!', type: 'success' });
+  };
+
+  const cf = (key: string) => contentDraft[key] ?? '';
+  const setcf = (key: string, val: string) => setContentDraft(prev => ({ ...prev, [key]: val }));
   
   // Email Settings state
   const [emailSettings, setEmailSettings] = useState<EmailSettings | null>(getEmailSettings());
@@ -351,6 +374,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout
             >
               <Settings className="w-4 h-4 text-emerald-500" /> Settings
             </button>
+            <button 
+              onClick={() => setActiveTab('content')}
+              className={`w-full p-4 rounded-xl transition-all flex items-center gap-4 text-xs uppercase tracking-widest font-black ${activeTab === 'content' ? 'bg-white/10 text-white border border-white/10' : 'text-white/40 hover:text-white hover:bg-white/5 border border-transparent'}`}
+            >
+              <FileText className="w-4 h-4 text-emerald-500" /> Site Content
+            </button>
           </nav>
         </div>
 
@@ -518,7 +547,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout
                                             </div>
                                             <input 
                                                 type="file" 
-                                                ref={el => bannerFileInputRefs.current[index] = el}
+                                                ref={el => { bannerFileInputRefs.current[index] = el; }}
                                                 className="hidden" 
                                                 accept="image/*"
                                                 onChange={(e) => handleImageUpload(e, (base64) => handleUpdateBanner(index, { image: base64 }))}
@@ -810,6 +839,193 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout
                             </div>
                         </div>
                     </div>
+                </motion.div>
+              ) : activeTab === 'content' ? (
+                <motion.div
+                  key="content-tab"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-4 pb-12"
+                >
+                  {/* Header bar */}
+                  <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-6 shadow-sm">
+                    <div className="flex items-center justify-between flex-wrap gap-4">
+                      <div className="flex items-center gap-3">
+                        <Globe className="w-5 h-5 text-[var(--accent)]" />
+                        <div>
+                          <h2 className="text-xl font-bold text-slate-900 tracking-tight">Site Content Editor</h2>
+                          <p className="text-xs text-slate-400 mt-0.5">Edit every piece of text across all pages. Changes persist instantly.</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleContentSave}
+                        disabled={contentSaving}
+                        className="px-6 py-2.5 bg-[#15803d] hover:bg-[#114022] disabled:bg-slate-300 text-white rounded-xl font-black text-xs tracking-widest transition-all flex items-center gap-2 shadow-md"
+                      >
+                        {contentSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        {contentSaving ? 'Saving...' : 'Save All Changes'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Accordion sections */}
+                  {([
+                    {
+                      id: 'branding', label: 'Branding & Footer', icon: <Globe className="w-4 h-4 text-emerald-500" />,
+                      fields: [
+                        { key: 'site_tagline', label: 'Site Tagline', hint: 'Shown under logo in header' },
+                        { key: 'footer_tagline', label: 'Footer Tagline', hint: 'Short brand description in footer', multi: true },
+                        { key: 'footer_email', label: 'Contact Email' },
+                        { key: 'footer_phone', label: 'Contact Phone' },
+                        { key: 'footer_copyright', label: 'Copyright Text' },
+                      ]
+                    },
+                    {
+                      id: 'home', label: 'Home Page', icon: <Layout className="w-4 h-4 text-emerald-500" />,
+                      fields: [
+                        { key: 'shop_eyebrow', label: 'Shop Section — Eyebrow Label' },
+                        { key: 'shop_heading', label: 'Shop Section — Heading' },
+                        { key: 'mission_heading_plain', label: 'Mission Heading — Plain Word' },
+                        { key: 'mission_heading_italic', label: 'Mission Heading — Italic Word' },
+                        { key: 'mission_body_1', label: 'Mission Body — Paragraph 1', multi: true },
+                        { key: 'mission_body_2', label: 'Mission Body — Paragraph 2', multi: true },
+                        { key: 'mission_btn_philosophy', label: 'Mission Button — Philosophy' },
+                        { key: 'mission_btn_contact', label: 'Mission Button — Contact' },
+                        { key: 'mission_btn_trials', label: 'Mission Button — View Trials' },
+                      ]
+                    },
+                    {
+                      id: 'about', label: 'About Page', icon: <Package className="w-4 h-4 text-emerald-500" />,
+                      fields: [
+                        { key: 'about_eyebrow', label: 'Eyebrow Label' },
+                        { key: 'about_heading', label: 'Main Heading' },
+                        { key: 'about_intro', label: 'Intro Paragraph', multi: true },
+                        { key: 'about_image_url', label: 'About Image URL', hint: 'Full URL to the main about-page image' },
+                        { key: 'about_story_heading', label: 'Story Section Heading' },
+                        { key: 'about_beginning_title', label: 'Story Col 1 — Title' },
+                        { key: 'about_beginning_text', label: 'Story Col 1 — Text', multi: true },
+                        { key: 'about_standards_title', label: 'Story Col 2 — Title' },
+                        { key: 'about_standards_text', label: 'Story Col 2 — Text', multi: true },
+                        { key: 'about_cta_title', label: 'CTA Banner — Title' },
+                        { key: 'about_cta_subtitle', label: 'CTA Banner — Subtitle' },
+                        { key: 'about_cta_btn', label: 'CTA Banner — Button Text' },
+                        { key: 'value1_title', label: 'Value Card 1 — Title' },
+                        { key: 'value1_text', label: 'Value Card 1 — Text', multi: true },
+                        { key: 'value2_title', label: 'Value Card 2 — Title' },
+                        { key: 'value2_text', label: 'Value Card 2 — Text', multi: true },
+                        { key: 'value3_title', label: 'Value Card 3 — Title' },
+                        { key: 'value3_text', label: 'Value Card 3 — Text', multi: true },
+                      ]
+                    },
+                    {
+                      id: 'contact', label: 'Contact Page', icon: <MessageSquare className="w-4 h-4 text-emerald-500" />,
+                      fields: [
+                        { key: 'contact_heading', label: 'Page Heading' },
+                        { key: 'contact_subtext', label: 'Subheading Text', multi: true },
+                        { key: 'contact_email', label: 'Email Address' },
+                        { key: 'contact_phone', label: 'Phone Number' },
+                        { key: 'contact_email_label', label: 'Email Column Label' },
+                        { key: 'contact_phone_label', label: 'Phone Column Label' },
+                      ]
+                    },
+                    {
+                      id: 'science', label: 'Science Page', icon: <BarChart3 className="w-4 h-4 text-emerald-500" />,
+                      fields: [
+                        { key: 'science_eyebrow', label: 'Eyebrow Label' },
+                        { key: 'science_heading', label: 'Main Heading' },
+                        { key: 'science_intro', label: 'Intro Paragraph', multi: true },
+                        { key: 'science_image_url', label: 'Science Image URL', hint: 'Full URL to the main science-page image' },
+                        { key: 'science_story_heading', label: 'Story Section Heading' },
+                        { key: 'science_story_body', label: 'Story Section Body', multi: true },
+                        { key: 'science_card1_title', label: 'Card 1 — Title' },
+                        { key: 'science_card1_text', label: 'Card 1 — Text', multi: true },
+                        { key: 'science_card2_title', label: 'Card 2 — Title' },
+                        { key: 'science_card2_text', label: 'Card 2 — Text', multi: true },
+                      ]
+                    },
+                    {
+                      id: 'privacy', label: 'Privacy Page', icon: <Settings className="w-4 h-4 text-emerald-500" />,
+                      fields: [
+                        { key: 'privacy_intro', label: 'Eyebrow / Label' },
+                        { key: 'privacy_revised', label: 'Revised Date Text' },
+                        { key: 'privacy_section1_title', label: 'Section 1 — Title' },
+                        { key: 'privacy_section1_text', label: 'Section 1 — Body', multi: true },
+                        { key: 'privacy_section2_title', label: 'Section 2 — Title' },
+                        { key: 'privacy_section2_text', label: 'Section 2 — Body', multi: true },
+                        { key: 'privacy_section3_title', label: 'Section 3 — Title' },
+                        { key: 'privacy_section3_text', label: 'Section 3 — Body', multi: true },
+                      ]
+                    },
+                  ] as Array<{ id: string; label: string; icon: React.ReactNode; fields: Array<{ key: string; label: string; hint?: string; multi?: boolean }> }>).map(section => (
+                    <div key={section.id} className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl overflow-hidden shadow-sm">
+                      <button
+                        onClick={() => toggleSection(section.id)}
+                        className="w-full flex items-center justify-between p-5 hover:bg-slate-50 transition-colors text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          {section.icon}
+                          <span className="font-bold text-slate-900 text-sm tracking-tight">{section.label}</span>
+                          <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full font-medium">{section.fields.length} fields</span>
+                        </div>
+                        {openSections[section.id]
+                          ? <ChevronUp className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                          : <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />}
+                      </button>
+
+                      <AnimatePresence initial={false}>
+                        {openSections[section.id] && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="border-t border-[var(--border)] p-5 grid sm:grid-cols-2 gap-4">
+                              {section.fields.map((field) => (
+                                <div key={field.key} className={`space-y-1.5 ${field.multi ? 'sm:col-span-2' : ''}`}>
+                                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-0.5 block">
+                                    {field.label}
+                                  </label>
+                                  {field.hint && (
+                                    <p className="text-[9px] text-slate-400 ml-0.5">{field.hint}</p>
+                                  )}
+                                  {field.multi ? (
+                                    <textarea
+                                      rows={3}
+                                      value={cf(field.key)}
+                                      onChange={e => setcf(field.key, e.target.value)}
+                                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-900 text-sm focus:outline-none focus:border-[#15803d] focus:ring-1 focus:ring-[#15803d]/20 transition-all resize-none"
+                                    />
+                                  ) : (
+                                    <input
+                                      type="text"
+                                      value={cf(field.key)}
+                                      onChange={e => setcf(field.key, e.target.value)}
+                                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-900 text-sm focus:outline-none focus:border-[#15803d] focus:ring-1 focus:ring-[#15803d]/20 transition-all"
+                                    />
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  ))}
+
+                  {/* Sticky save bar */}
+                  <div className="sticky bottom-4 pt-2">
+                    <button
+                      onClick={handleContentSave}
+                      disabled={contentSaving}
+                      className="w-full bg-[#15803d] hover:bg-[#114022] disabled:bg-slate-300 text-white py-4 rounded-xl font-black text-sm tracking-widest transition-all hover:shadow-[0_10px_30px_rgba(21,128,61,0.4)] flex items-center justify-center gap-3 active:scale-95 shadow-xl"
+                    >
+                      {contentSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                      {contentSaving ? 'SAVING...' : 'SAVE ALL CHANGES'}
+                    </button>
+                  </div>
                 </motion.div>
               ) : null}
             </AnimatePresence>

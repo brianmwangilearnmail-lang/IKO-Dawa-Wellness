@@ -63,12 +63,16 @@ export interface SiteAnalytics {
   };
 }
 
+// Key-value store for all editable site content
+export type SiteContent = Record<string, string>;
+
 export interface SiteContextType {
   products: Product[];
   hero: HeroBanner[];
   orders: Order[];
   analytics: SiteAnalytics;
   inventoryBatches: InventoryBatch[];
+  siteContent: SiteContent;
   loading: boolean;
   updateHero: (banners: HeroBanner[]) => Promise<void>;
   updateProduct: (id: number, product: Partial<Product>) => Promise<void>;
@@ -76,6 +80,7 @@ export interface SiteContextType {
   deleteProduct: (id: number) => Promise<void>;
   updateOrderStatus: (id: string | number, status: Order['status']) => Promise<void>;
   createOrder: (orderData: any) => Promise<string>;
+  updateSiteContent: (updates: SiteContent) => Promise<void>;
 }
 
 export interface Inquiry {

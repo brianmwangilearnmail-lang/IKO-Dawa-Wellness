@@ -43,23 +43,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
     }));
 
     try {
-      const result = await createOrder(
-        {
-          customer_name: formData.name.trim(),
-          customer_email: formData.email.trim(),
-          total_amount: totalPrice,
-          status: 'pending',
-        },
-        orderItems
-      );
-
-      if (result.success) {
-        setIsSuccess(true);
-        clearCart();
-        setFormData({ name: '', email: '' });
-      } else {
-        setOrderError(result.error || 'An unexpected error occurred. Please try again.');
-      }
+      await createOrder({
+        customer_name: formData.name.trim(),
+        customer_email: formData.email.trim(),
+        total_amount: totalPrice,
+        status: 'pending',
+        order_items: orderItems,
+      });
+      setIsSuccess(true);
+      clearCart();
+      setFormData({ name: '', email: '' });
     } catch (err: any) {
       setOrderError(err.message || 'An unexpected error occurred. Please try again.');
     } finally {
