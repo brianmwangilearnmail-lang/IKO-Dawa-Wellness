@@ -139,16 +139,30 @@ export const Hero: React.FC = () => {
             >
               <div className="absolute inset-0 bg-slate-900/5 group-hover:bg-slate-900/0 transition-colors duration-700 z-10" />
               {currentBanner?.image ? (
-                <motion.img
-                  initial={{ scale: 1.05 }}
-                  animate={{ scale: 1 }}
-                  transition={{ duration: 10, ease: "linear" }}
-                  src={currentBanner.image}
-                  alt="Wellness Banner"
-                  className="w-full h-full object-cover transition-all duration-1000"
-                  referrerPolicy="no-referrer"
-                  draggable={false}
-                />
+                <>
+                  <motion.img
+                    key={currentBanner.image} // Key by image URL to trigger re-render on slide change
+                    initial={{ scale: 1.05 }}
+                    animate={{ scale: 1 }}
+                    transition={{ duration: 10, ease: "linear" }}
+                    src={currentBanner.image}
+                    alt="Wellness Banner"
+                    className="w-full h-full object-cover transition-all duration-1000"
+                    referrerPolicy="no-referrer"
+                    draggable={false}
+                    // Optimization: High priority for the active banner
+                    fetchpriority="high"
+                    loading="eager"
+                  />
+                  {/* Preload the next image if available */}
+                  {hero.length > 1 && (
+                    <link
+                      rel="preload"
+                      as="image"
+                      href={hero[(current + 1) % hero.length].image}
+                    />
+                  )}
+                </>
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-emerald-50 border border-emerald-100">
                   <p className="font-serif italic text-3xl text-emerald-200 tracking-widest">Natural Balance</p>

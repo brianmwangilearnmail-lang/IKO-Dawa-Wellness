@@ -108,14 +108,22 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'de
         </div>
 
         {/* Image Area */}
-        <div className="relative aspect-square flex items-center justify-center p-6 bg-white cursor-pointer" onClick={() => setIsModalOpen(true)}>
+        <div className="relative aspect-square flex items-center justify-center p-6 bg-white cursor-pointer overflow-hidden" onClick={() => setIsModalOpen(true)}>
+          {!imgLoaded && product.image && !imgError && (
+            <div className="absolute inset-0 bg-slate-50 animate-pulse flex items-center justify-center">
+              <Package className="w-8 h-8 text-slate-200" />
+            </div>
+          )}
+          
           {product.image && !imgError ? (
             <img
               src={product.image}
               alt={product.title}
               loading="lazy"
+              onLoad={handleImgLoad}
+              onError={handleImgError}
               referrerPolicy="no-referrer"
-              className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-700"
+              className={`w-full h-full object-contain group-hover:scale-105 transition-all duration-700 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
             />
           ) : (
             <div className="flex flex-col items-center text-slate-200">

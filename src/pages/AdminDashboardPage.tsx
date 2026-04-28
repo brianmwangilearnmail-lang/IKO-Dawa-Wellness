@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useSite, DEFAULT_SITE_CONTENT } from '../context/SiteContext';
 import { Product, Order, HeroBanner, SiteContent } from '../types';
 import { AnalyticsDashboard } from '../components/AnalyticsDashboard';
+import { compressImage } from '../lib/imageUtils';
 import { supabase } from '../lib/supabase';
 
 interface AdminDashboardPageProps {
@@ -160,7 +161,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout
     updateProduct(id, { inStock: !currentStatus });
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, callback: (base64: string) => void) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, callback: (base64: string) => void) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -169,42 +170,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout
       return;
     }
 
-    // Auto-compress image using canvas before storing
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-
-    img.onload = () => {
-      const MAX_SIZE = 1200;
-      let { width, height } = img;
-
-      // Scale down if too large
-      if (width > MAX_SIZE || height > MAX_SIZE) {
-        if (width > height) {
-          height = Math.round((height * MAX_SIZE) / width);
-          width = MAX_SIZE;
-        } else {
-          width = Math.round((width * MAX_SIZE) / height);
-          height = MAX_SIZE;
-        }
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(img, 0, 0, width, height);
-
-      // Preserve PNG transparency; use JPEG only for photos
-      const isPng = file.type === 'image/png';
-      const compressed = isPng
-        ? canvas.toDataURL('image/png')
-        : canvas.toDataURL('image/jpeg', 0.85);
-      URL.revokeObjectURL(objectUrl);
+    try {
+      // Use the new compression utility
+      const compressed = await compressImage(file, {
+        maxWidth: 1600, // Slightly larger for banners
+        quality: 0.8,
+        format: 'image/webp'
+      });
       callback(compressed);
-    };
-
-    img.src = objectUrl;
+    } catch (error) {
+      console.error('Compression failed:', error);
+      setNotification({ message: 'Failed to process image. Please try again.', type: 'error' });
+    }
   };
 
   const openAddModal = () => {
