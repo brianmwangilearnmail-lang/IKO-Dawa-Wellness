@@ -148,32 +148,46 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async function loadData() {
       setLoading(true);
       
-      // Fetch products and map snake_case to camelCase
-      const { data: dbProducts } = await supabase.from('products').select('*').order('id', { ascending: true });
-      if (dbProducts) {
-        setProducts(dbProducts.map((p: any) => ({ ...p, inStock: p.in_stock })) as Product[]);
+      try {
+        const isAdmin = localStorage.getItem('is_admin_authenticated') === 'true';
+
+        // Parallel fetching for public data
+        const [productsRes, heroRes, contentRes] = await Promise.all([
+          supabase.from('products').select('*').order('id', { ascending: true }),
+          supabase.from('hero_banners').select('*').order('order_index', { ascending: true }),
+          supabase.from('site_content').select('*')
+        ]);
+
+        if (productsRes.data) {
+          setProducts(productsRes.data.map((p: any) => ({ ...p, inStock: p.in_stock })) as Product[]);
+        }
+
+        if (heroRes.data) {
+          setHero(heroRes.data as HeroBanner[]);
+        }
+
+        if (contentRes.data) {
+          const contentMap: SiteContent = { ...DEFAULT_SITE_CONTENT };
+          contentRes.data.forEach(item => {
+            contentMap[item.key] = item.value;
+          });
+          setSiteContent(contentMap);
+        }
+
+        // Only fetch orders if admin is authenticated to save bandwidth and speed up public load
+        if (isAdmin) {
+          const { data: dbOrders } = await supabase
+            .from('orders')
+            .select('*, order_items(*)')
+            .order('created_at', { ascending: false });
+          if (dbOrders) setOrders(dbOrders as Order[]);
+        }
+
+      } catch (error) {
+        console.error('Data loading failed:', error);
+      } finally {
+        setLoading(false);
       }
-
-      // Fetch hero banners
-      const { data: dbHero } = await supabase.from('hero_banners').select('*').order('order_index', { ascending: true });
-      if (dbHero) setHero(dbHero as HeroBanner[]);
-
-      // Fetch orders
-      const { data: dbOrders } = await supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false });
-      if (dbOrders) setOrders(dbOrders as Order[]);
-
-      // Fetch site content
-      const { data: dbContent } = await supabase.from('site_content').select('*');
-      if (dbContent) {
-        // Convert array of {key, value} to Record<string, string>
-        const contentMap: SiteContent = { ...DEFAULT_SITE_CONTENT };
-        dbContent.forEach(item => {
-          contentMap[item.key] = item.value;
-        });
-        setSiteContent(contentMap);
-      }
-
-      setLoading(false);
     }
     
     loadData();

@@ -3,19 +3,38 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { HomePage } from './pages/HomePage';
-import { AboutPage } from './pages/AboutPage';
-import { ContactPage, SciencePage, PrivacyPage } from './pages/StaticPages';
-import { AdminLoginPage } from './pages/AdminLoginPage';
-import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { SiteProvider } from './context/SiteContext';
 import { CartProvider } from './context/CartContext';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { CartDrawer } from './components/CartDrawer';
 import { AnimatePresence, motion } from 'motion/react';
+
+// Lazy load pages for code splitting
+const AboutPage = lazy(() => import('./pages/AboutPage').then(m => ({ default: m.AboutPage })));
+const StaticPages = lazy(() => import('./pages/StaticPages'));
+const AdminLoginPage = lazy(() => import('./pages/AdminLoginPage').then(m => ({ default: m.AdminLoginPage })));
+const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage').then(m => ({ default: m.AdminDashboardPage })));
+
+// Helper to extract named exports from static pages
+const ContactPage = (props: any) => (
+  <Suspense fallback={<PageLoader />}><StaticPages.ContactPage {...props} /></Suspense>
+);
+const SciencePage = (props: any) => (
+  <Suspense fallback={<PageLoader />}><StaticPages.SciencePage {...props} /></Suspense>
+);
+const PrivacyPage = (props: any) => (
+  <Suspense fallback={<PageLoader />}><StaticPages.PrivacyPage {...props} /></Suspense>
+);
+
+const PageLoader = () => (
+  <div className="min-h-[60vh] flex items-center justify-center">
+    <div className="w-8 h-8 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+  </div>
+);
 
 // ─── Protected admin route ───────────────────────────────────────────────────
 function AdminRoute({ isAuthenticated, onLogin, onLogout }: {
@@ -84,11 +103,13 @@ export default function App() {
           <Route
             path="/admin"
             element={
-              <AdminRoute
-                isAuthenticated={isAdminAuthenticated}
-                onLogin={handleAdminLogin}
-                onLogout={handleAdminLogout}
-              />
+              <Suspense fallback={<PageLoader />}>
+                <AdminRoute
+                  isAuthenticated={isAdminAuthenticated}
+                  onLogin={handleAdminLogin}
+                  onLogout={handleAdminLogout}
+                />
+              </Suspense>
             }
           />
 
@@ -105,7 +126,9 @@ export default function App() {
             path="/about"
             element={
               <PublicLayout onCartToggle={() => setIsCartOpen(true)}>
-                <AboutPage />
+                <Suspense fallback={<PageLoader />}>
+                  <AboutPage />
+                </Suspense>
               </PublicLayout>
             }
           />
