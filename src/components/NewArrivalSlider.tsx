@@ -4,7 +4,11 @@ import { ProductCard } from './ProductCard';
 import { useSite } from '../context/SiteContext';
 
 export const NewArrivalSlider: React.FC = () => {
-  const { products } = useSite();
+  const { products, loading } = useSite();
+  
+  if (loading) return null; // Or show skeleton
+  if (products.length === 0) return null;
+
   // For demonstration, taking the last 8 items as "new arrivals"
   const newArrivals = products.slice(-8).reverse();
 

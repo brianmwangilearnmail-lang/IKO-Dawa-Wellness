@@ -18,7 +18,7 @@ function useSwipe(onLeft: () => void, onRight: () => void) {
 }
 
 export const Hero: React.FC = () => {
-  const { hero } = useSite();
+  const { hero, loading } = useSite();
   const [current, setCurrent] = useState(0);
   const [direction, setDirection] = useState(1);
   const [isPaused, setIsPaused] = useState(false);
@@ -63,13 +63,24 @@ export const Hero: React.FC = () => {
 
   const swipe = useSwipe(next, prev);
 
-  if (!hero || hero.length === 0) {
+  if (loading) {
     return (
       <div className="w-full mt-14 md:mt-24 bg-gradient-to-r from-emerald-900/10 via-emerald-900/5 to-emerald-900/10 animate-pulse flex items-center justify-center border-b border-[var(--border)]" style={{ height: 'min(56.25vw, 60vh)', minHeight: '200px' }}>
         <div className="flex flex-col items-center gap-3 opacity-40">
           <svg className="w-8 h-8 md:w-10 md:h-10 text-[var(--accent)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3 3h18M3 21h18" /></svg>
           <p className="text-[var(--accent)] text-[10px] md:text-xs font-semibold uppercase tracking-wider">Loading...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (!hero || hero.length === 0) {
+    return (
+      <div className="w-full mt-14 md:mt-24 flex items-center justify-center bg-emerald-50/50 border-b border-emerald-100" style={{ height: '30vh' }}>
+         <div className="text-center">
+            <p className="font-serif italic text-2xl text-emerald-800/40 tracking-widest">Natural Balance & Precision</p>
+            <p className="text-[10px] uppercase tracking-widest text-emerald-600 mt-2 font-bold opacity-60">Iko Dawa Wellness Centre</p>
+         </div>
       </div>
     );
   }

@@ -34,15 +34,20 @@ export const HomePage: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-12">
-            {products.length === 0 && (
+            {useSite().loading ? (
               <div className="col-span-full py-12 flex flex-col items-center justify-center gap-4 animate-pulse">
                 <div className="w-12 h-12 border-[3px] border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
                 <p className="text-emerald-800 font-black tracking-widest text-xs uppercase">Curating Products...</p>
               </div>
+            ) : products.length === 0 ? (
+              <div className="col-span-full py-12 flex flex-col items-center justify-center text-center">
+                <p className="text-slate-400 font-medium italic">Our collection is currently being updated. Please check back shortly.</p>
+              </div>
+            ) : (
+              products.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))
             )}
-            {products.map((product) => (
-              <ProductCard key={product.id} product={product} />
-            ))}
           </div>
         </div>
       </section>
